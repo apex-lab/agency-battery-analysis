@@ -1,4 +1,5 @@
 from sklearn.metrics import roc_auc_score
+from scipy.stats import mannwhitneyu
 import numpy as np
 import pandas as pd
 import re
@@ -17,8 +18,16 @@ def process_SoAS(subs, layout):
         df = pd.read_csv(f, sep = '\t')
         SoPA_sub = np.sum(df.response * SoPA_loadings)
         SoNA_sub = np.sum(df.response * SoNA_loadings)
+
+        # exclude if only replied 1 or 7
+        if df.response.isin([1, 7]).all():
+            exclude = True
+        else:
+            exclude = False
+
         soa = pd.Series({
-            'SoPA': SoPA_sub, 'SoNA': SoNA_sub, 'subject': sub
+            'SoPA': SoPA_sub, 'SoNA': SoNA_sub,
+            'subject': sub, 'exclude': exclude
         })
         SoA_scores.append(soa)
     SoA_scores = pd.DataFrame(SoA_scores)
@@ -55,13 +64,13 @@ def process_libet(subs, layout):
                 'subject': sub
             })
             sub_meas.append(s)
-            sub_effects[cond] = (delta.mean(), delta.std(ddof=1))
+            sub_effects[cond] = (np.mean(delta), delta.std(ddof=1))
         m1, sd1 = sub_effects['baseline_key']
         m2, sd2 = sub_effects['operant_key']
-        key_effect = cohens_d(m1, sd1, m2, sd2)
+        key_effect = m1 - m2 # cohens_d(m1, sd1, m2, sd2)
         m1, sd1 = sub_effects['baseline_tone']
         m2, sd2 = sub_effects['operant_tone']
-        tone_effect = cohens_d(m1, sd1, m2, sd2)
+        tone_effect = m1 - m2 #cohens_d(m1, sd1, m2, sd2)
         sub_effects = pd.Series({
             'binding: key': key_effect, 'binding: tone': -1*tone_effect,
             'subject': sub
@@ -91,13 +100,6 @@ def process_dot_motion(subs, layout):
 
         exclude = False
 
-        # exclude if only responded with extreme confidence
-        resp_max = df.confidenceLevel == df.confidenceLevel.max()
-        resp_min = df.confidenceLevel == df.confidenceLevel.min()
-        resp_extremes = resp_max | resp_min
-        if resp_extremes.mean() > .95:
-            exclude = True
-
         # exclude if less than 40% accuracy on catch trials
         catch_corr_prop = df[df.trial == 'catch'].correct.mean()
         if catch_corr_prop < .4:
@@ -110,10 +112,19 @@ def process_dot_motion(subs, layout):
         thres = df[df.reverse == True]['controlLevel'][-5:].mean()
 
         # metacognitive (Type II) AUROC
-        auroc = roc_auc_score(df.correct, df.confidenceLevel)
-
-        if auroc < .5:
-            exclude = True
+        try:
+            auroc = roc_auc_score(df.correct, df.confidenceLevel)
+            # check if AUC is significantly below chance with a U-test
+            res = mannwhitneyu(
+                x = df.confidenceLevel[df.correct],
+                y = df.confidenceLevel[~df.correct],
+                alternative = 'less'
+            )
+            if res.pvalue < .05:
+                exclude = True
+        except:
+            print('Subject %s removed from dot motion data for NaNs.'%sub)
+            continue
 
         soa = pd.Series({
             'control threshold': thres, 'AUROC': auroc,
