@@ -60,6 +60,8 @@ with open('questions.json', 'r') as qf:
     survey_questions = json.load(qf)
 
 worker_ids = defaultdict(lambda: None)
+ages = defaultdict(lambda: None)
+sexes = defaultdict(lambda: None)
 has_all_data = defaultdict(lambda: False)
 
 for f, sub, t in zip(fpaths, sub_ids, timestamps):
@@ -67,6 +69,28 @@ for f, sub, t in zip(fpaths, sub_ids, timestamps):
     try:
 
         df = pd.read_csv(f)
+
+        # extract demographic info
+        try:
+            resp = df[df['trial_type'] == 'survey-multi-choice'].iloc[2]['response']
+            resp = json.loads(resp)
+            sexes[sub] = resp['sex'][0]
+            resp = df[df['trial_type'] == 'survey-text'].iloc[0]['response']
+            resp = json.loads(resp)
+            ages[sub] = int(resp['Q0'])
+            if ages[sub] < 18: # minimum age to get a prolific account
+                ages[sub] = None # Some participants just put 0 to decline putting in their age
+        except:
+            try: # earlier subjects got demographic questions in a different format
+                resp = df[df['trial_type'] == 'survey-multi-choice'].iloc[2]['response']
+                resp = json.loads(resp)
+                sexes[sub] = resp['gender'][0]
+                resp = df[df['trial_type'] == 'survey-text'].iloc[0]['response']
+                resp = json.loads(resp)
+                ages[sub] = int(2023 - int(resp['Q0'].split('/')[-1])) + 1
+            except:
+                sexes[sub] = None
+                ages[sub] = None
 
         # save worker ID
         worker_ids[sub] = df.subject_id[0]
@@ -178,8 +202,12 @@ for f, sub, t in zip(fpaths, sub_ids, timestamps):
 # save subject metadata
 wids = [worker_ids[sub] for sub in sub_ids]
 has_data = [has_all_data[sub] for sub in sub_ids]
+ages = [ages[sub] for sub in sub_ids]
+sexes = [sexes[sub] for sub in sub_ids]
 participants = pd.DataFrame({
     'participant_id': sub_ids,
+    'age': ages,
+    'sex' : sexes,
     'complete': has_data,
     'timestamp': [t.strftime("%Y-%m-%dT%H:%M:%S.%f") for t in timestamps],
     'prolific_id': wids
