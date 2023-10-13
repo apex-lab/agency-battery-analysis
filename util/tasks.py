@@ -67,10 +67,10 @@ def process_libet(subs, layout):
             sub_effects[cond] = (np.mean(delta), delta.std(ddof=1))
         m1, sd1 = sub_effects['baseline_key']
         m2, sd2 = sub_effects['operant_key']
-        key_effect = m1 - m2 # cohens_d(m1, sd1, m2, sd2)
+        key_effect = m2 - m1 # cohens_d(m1, sd1, m2, sd2)
         m1, sd1 = sub_effects['baseline_tone']
         m2, sd2 = sub_effects['operant_tone']
-        tone_effect = m1 - m2 #cohens_d(m1, sd1, m2, sd2)
+        tone_effect = m2 - m1 #cohens_d(m1, sd1, m2, sd2)
         sub_effects = pd.Series({
             'binding: key': key_effect, 'binding: tone': -1*tone_effect,
             'subject': sub
