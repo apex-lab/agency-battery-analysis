@@ -1,5 +1,6 @@
 from sklearn.metrics import roc_auc_score
 from scipy.stats import mannwhitneyu
+from metadpy.mle import metad
 import numpy as np
 import pandas as pd
 import re
@@ -21,6 +22,8 @@ def process_SoAS(subs, layout):
 
         # exclude if only replied 1 or 7
         if df.response.isin([1, 7]).all():
+            exclude = True
+        elif (df.response[0] == df.response).all(): # or always said same thing
             exclude = True
         else:
             exclude = False
@@ -91,6 +94,72 @@ def process_libet(subs, layout):
     indiv_effect_sizes['exclude'] = exclude
     return meas_df, indiv_effect_sizes
 
+def compute_metad(df):
+    '''
+    compute meta-d' while handling weird divide-by-zero error:
+    https://github.com/embodied-computation-group/metadpy/issues/13
+    '''
+    df = df.copy()[df.trial != 'catch']
+    opposite = df.key_press.copy().replace({'A': 'B', 'B': 'A'})
+    answer = df.key_press.copy()
+    answer[~df.correct] = opposite
+    metadf = pd.DataFrame(dict(
+        Stimuli = answer.replace({'A': 1, 'B': 0}).astype(int) ,
+        Accuracy = df.correct.astype(int),
+        Confidence = df.confidenceLevel.astype(int)
+    ))
+    metadf = metadf.reset_index()
+    unique = np.unique(metadf.Confidence)
+    new_labels = np.arange(1, unique.size + 1)
+    metadf.Confidence = metadf.Confidence.replace(
+        {old: new for old, new in zip(unique, new_labels)}
+    )
+    if (metadf.Confidence[0] == metadf.Confidence).all():
+        return 0. # a.k.a. chance, save ourselves some compute
+    try: # try with default amount of padding (recommended for MLE optimization)
+        subject_fit = metad(
+            data = metadf,
+            nRatings = unique.size,
+            stimuli = "Stimuli",
+            accuracy = "Accuracy",
+            confidence = "Confidence",
+            padding = True # default padAmount is 1/2*n
+        )
+    except:
+        try: # a little more padding than default
+            subject_fit = metad(
+                data = metadf,
+                nRatings = unique.size,
+                stimuli = "Stimuli",
+                accuracy = "Accuracy",
+                confidence = "Confidence",
+                padding = True,
+                padAmount = 1/(1*unique.size)
+            )
+        except:
+            try: # a little less passing than default
+                subject_fit = metad(
+                    data = metadf,
+                    nRatings = unique.size,
+                    stimuli = "Stimuli",
+                    accuracy = "Accuracy",
+                    confidence = "Confidence",
+                    padding = True,
+                    padAmount = 1/(3*unique.size)
+                )
+            except: # fine, we'll just give up on padding...
+                subject_fit = metad(
+                    data = metadf,
+                    nRatings = unique.size,
+                    stimuli = "Stimuli",
+                    accuracy = "Accuracy",
+                    confidence = "Confidence",
+                    padding = False # generally bad but here we are
+                )
+    return subject_fit.iloc[0, 1]
+
+
+
 def process_dot_motion(subs, layout):
     meas = []
     for sub in subs:
@@ -122,12 +191,13 @@ def process_dot_motion(subs, layout):
             )
             if res.pvalue < .05:
                 exclude = True
+            metadprime = compute_metad(df)
         except:
             print('Subject %s removed from dot motion data for NaNs.'%sub)
             continue
 
         soa = pd.Series({
-            'control threshold': thres, 'AUROC': auroc,
+            'control threshold': thres, 'AUROC': auroc, 'metad': metadprime,
             'subject': sub, 'exclude': exclude
         })
         meas.append(soa)
