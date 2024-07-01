@@ -1,0 +1,23 @@
+name: agency-battery
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pymc>=5
+  - arviz
+  - scipy
+  - ipython
+  - jupyter
+  - matplotlib
+  - seaborn=0.11.0
+  - scikit-learn
+  - statsmodels
+  - joblib
+  - pip
+  - pip:
+    - pybids
+    - osfclient
+    - dabest==2023.02.14
+    - metadpy
+    - ptitprince
